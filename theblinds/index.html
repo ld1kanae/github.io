@@ -13,10 +13,13 @@
 
 <!-- OGP -->
 <meta property="og:title" content="The Blinds">
+<meta property="og:description" content="The Blinds — Read online">
 <meta property="og:image" content="https://ld1kanae.github.io/theblinds/cover-front.png">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://ld1kanae.github.io/theblinds/">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The Blinds">
+<meta name="twitter:description" content="The Blinds — Read online">
 <meta name="twitter:image" content="https://ld1kanae.github.io/theblinds/cover-front.png">
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -459,61 +462,54 @@ function cloneCanvas(s) {
 }
 
 // ── Slide Animation (single-page portrait only) ──
-// Filmstrip: old page and new page sit side by side, the strip translates.
+// Two full-viewport panels slide in unison. No gap because each covers 100%.
 async function displayWithSlide(dir) {
   if (!spreads.length) return;
   const sp = spreads[currentIdx];
   const vw = window.innerWidth, vh = window.innerHeight;
-  const mw = vw;
-  const newSrc = await renderVP(sp[0], mw, vh);
+  const newSrc = await renderVP(sp[0], vw, vh);
   const newNode = cloneCanvas(newSrc);
 
-  // Grab current page content (if any) — cloneNode won't copy canvas pixels
   const oldCanvas = $spread.querySelector('.page-canvas');
   const oldNode = oldCanvas ? cloneCanvas(oldCanvas) : null;
 
-  // Build a filmstrip container
-  const strip = document.createElement('div');
-  strip.style.cssText =
-    'position:absolute;top:0;left:0;height:100%;display:flex;align-items:center;' +
-    'z-index:6;will-change:transform;';
+  const bg = bgColor==='black'?'#080808':'#f4f3ee';
+  const panelCSS = 'position:absolute;top:0;width:'+vw+'px;height:100%;' +
+    'display:flex;align-items:center;justify-content:center;background:'+bg+';' +
+    'will-change:transform;transition:transform 0.3s cubic-bezier(0.25,0.1,0.25,1);';
 
-  // Wrap each page in a cell of exactly viewport width
-  const makeCell = (child) => {
-    const cell = document.createElement('div');
-    cell.style.cssText = 'width:'+vw+'px;height:100%;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
-    if (child) cell.appendChild(child);
-    return cell;
-  };
+  // Old panel (current page)
+  const oldPanel = document.createElement('div');
+  oldPanel.style.cssText = panelCSS + 'left:0;z-index:6;';
+  if (oldNode) oldPanel.appendChild(oldNode);
 
-  if (dir > 0) {
-    // Forward: [old][new], start at 0, slide to -vw
-    strip.appendChild(makeCell(oldNode));
-    strip.appendChild(makeCell(newNode));
-    strip.style.transform = 'translateX(0)';
-  } else {
-    // Backward: [new][old], start at -vw, slide to 0
-    strip.appendChild(makeCell(newNode));
-    strip.appendChild(makeCell(oldNode));
-    strip.style.transform = 'translateX(-'+vw+'px)';
-  }
+  // New panel (incoming page)
+  const newPanel = document.createElement('div');
+  // Start off-screen: forward → right side, backward → left side
+  newPanel.style.cssText = panelCSS + 'left:0;z-index:7;transform:translateX('+(dir*vw)+'px);';
+  newPanel.appendChild(newNode);
 
-  strip.style.width = (vw * 2) + 'px';
-  $viewer.appendChild(strip);
+  $spread.style.visibility = 'hidden';
+  $viewer.appendChild(oldPanel);
+  $viewer.appendChild(newPanel);
 
   // Force reflow
-  void strip.offsetWidth;
-  strip.style.transition = 'transform 0.3s cubic-bezier(0.25,0.1,0.25,1)';
-  strip.style.transform = dir > 0 ? 'translateX(-'+vw+'px)' : 'translateX(0)';
+  void newPanel.offsetWidth;
+
+  // Animate: new slides in, old slides out
+  oldPanel.style.transform = 'translateX('+(-dir*vw)+'px)';
+  newPanel.style.transform = 'translateX(0)';
 
   const finalize = () => {
     $spread.innerHTML = '';
     $spread.appendChild(cloneCanvas(newSrc));
-    if (strip.parentNode) strip.remove();
+    $spread.style.visibility = '';
+    if (oldPanel.parentNode) oldPanel.remove();
+    if (newPanel.parentNode) newPanel.remove();
   };
 
-  strip.addEventListener('transitionend', finalize, { once: true });
-  setTimeout(() => { if (strip.parentNode) finalize(); }, 400);
+  newPanel.addEventListener('transitionend', finalize, { once: true });
+  setTimeout(() => { if (newPanel.parentNode) finalize(); }, 400);
 
   updateIndicator(sp);
   $progress.style.width = ((currentIdx+1)/spreads.length*100)+'%';
