@@ -459,45 +459,60 @@ function cloneCanvas(s) {
 }
 
 // ── Slide Animation (single-page portrait only) ──
+// Filmstrip: old page and new page sit side by side, the strip translates.
 async function displayWithSlide(dir) {
   if (!spreads.length) return;
   const sp = spreads[currentIdx];
   const vw = window.innerWidth, vh = window.innerHeight;
-  const mw = isSpread ? Math.min(vw*0.48,vh*0.75) : vw;
-  const src = await renderVP(sp[0], mw, vh);
-  const node = cloneCanvas(src);
+  const mw = vw;
+  const newSrc = await renderVP(sp[0], mw, vh);
+  const newNode = cloneCanvas(newSrc);
 
-  // Create overlay that slides over the old page
-  const overlay = document.createElement('div');
-  const bg = bgColor==='black' ? '#080808' : '#f4f3ee';
-  overlay.style.cssText =
-    'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
-    'z-index:6;background:' + bg + ';transform:translateX(' + (dir * vw) + 'px);will-change:transform;';
-  overlay.appendChild(node);
-  $viewer.appendChild(overlay);
+  // Grab current page content (if any)
+  const oldNode = $spread.querySelector('.page-canvas');
 
-  // Force reflow, then animate
-  void overlay.offsetWidth;
-  overlay.style.transition = 'transform 0.28s cubic-bezier(0.25,0.1,0.25,1)';
-  overlay.style.transform = 'translateX(0)';
+  // Build a filmstrip container
+  const strip = document.createElement('div');
+  strip.style.cssText =
+    'position:absolute;top:0;left:0;height:100%;display:flex;align-items:center;' +
+    'z-index:6;will-change:transform;';
 
-  overlay.addEventListener('transitionend', () => {
-    // Replace spread content with the new page, remove overlay
+  // Wrap each page in a cell of exactly viewport width
+  const makeCell = (child) => {
+    const cell = document.createElement('div');
+    cell.style.cssText = 'width:'+vw+'px;height:100%;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+    if (child) cell.appendChild(child);
+    return cell;
+  };
+
+  if (dir > 0) {
+    // Forward: [old][new], start at 0, slide to -vw
+    strip.appendChild(makeCell(oldNode ? oldNode.cloneNode(true) : null));
+    strip.appendChild(makeCell(newNode));
+    strip.style.transform = 'translateX(0)';
+  } else {
+    // Backward: [new][old], start at -vw, slide to 0
+    strip.appendChild(makeCell(newNode));
+    strip.appendChild(makeCell(oldNode ? oldNode.cloneNode(true) : null));
+    strip.style.transform = 'translateX(-'+vw+'px)';
+  }
+
+  strip.style.width = (vw * 2) + 'px';
+  $viewer.appendChild(strip);
+
+  // Force reflow
+  void strip.offsetWidth;
+  strip.style.transition = 'transform 0.3s cubic-bezier(0.25,0.1,0.25,1)';
+  strip.style.transform = dir > 0 ? 'translateX(-'+vw+'px)' : 'translateX(0)';
+
+  const finalize = () => {
     $spread.innerHTML = '';
-    $spread.style.transform = '';
-    $spread.appendChild(cloneCanvas(src));
-    overlay.remove();
-  }, { once: true });
+    $spread.appendChild(cloneCanvas(newSrc));
+    if (strip.parentNode) strip.remove();
+  };
 
-  // Fallback in case transitionend doesn't fire
-  setTimeout(() => {
-    if (overlay.parentNode) {
-      $spread.innerHTML = '';
-      $spread.style.transform = '';
-      $spread.appendChild(cloneCanvas(src));
-      overlay.remove();
-    }
-  }, 350);
+  strip.addEventListener('transitionend', finalize, { once: true });
+  setTimeout(() => { if (strip.parentNode) finalize(); }, 400);
 
   updateIndicator(sp);
   $progress.style.width = ((currentIdx+1)/spreads.length*100)+'%';
