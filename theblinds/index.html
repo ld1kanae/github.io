@@ -145,11 +145,14 @@
 
   #seek-bar{
     position:fixed;bottom:0;left:0;right:0;
-    z-index:70;display:none;
+    z-index:70;
+    display:flex;align-items:center;gap:10px;
     padding:10px 16px max(12px, env(safe-area-inset-bottom, 12px)) 16px;
     backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    opacity:0;pointer-events:none;
+    transition:opacity 0.4s ease;
   }
-  #seek-bar.show{display:flex;align-items:center;gap:10px}
+  #seek-bar.show{opacity:1;pointer-events:auto}
   #seek-reset{
     border:none;background:none;color:inherit;cursor:pointer;
     font-size:14px;opacity:0.5;padding:2px 4px;flex:none;
@@ -667,11 +670,28 @@ function updateSeekBar() {
   $seekTotal.textContent = spreads.length;
 }
 
+let seekAutoHideT=null;
+function openSeek(){
+  seekOpen=true;
+  $seekBar.classList.add('show');
+  $seekBtn.style.display='none';
+  updateSeekBar();
+  resetSeekAutoHide();
+}
+function closeSeek(){
+  seekOpen=false;
+  $seekBar.classList.remove('show');
+  $seekBtn.style.display='';
+  clearTimeout(seekAutoHideT);
+}
+function resetSeekAutoHide(){
+  clearTimeout(seekAutoHideT);
+  seekAutoHideT=setTimeout(()=>{ if(seekOpen) closeSeek(); },3000);
+}
+
 $seekBtn.addEventListener('click', e => {
   e.stopPropagation();
-  seekOpen = !seekOpen;
-  $seekBar.classList.toggle('show', seekOpen);
-  if (seekOpen) updateSeekBar();
+  seekOpen ? closeSeek() : openSeek();
 });
 
 $seekRange.addEventListener('input', () => {
@@ -679,6 +699,7 @@ $seekRange.addEventListener('input', () => {
   $seekCur.textContent = idx + 1;
   currentIdx = idx;
   display();
+  resetSeekAutoHide();
 });
 
 // Reset to page 1
@@ -686,13 +707,13 @@ $('seek-reset').addEventListener('click', () => {
   currentIdx = 0;
   display();
   updateSeekBar();
+  resetSeekAutoHide();
 });
 
 // Close seek bar on tap outside
 document.addEventListener('click', e => {
   if (seekOpen && !$seekBar.contains(e.target) && e.target !== $seekBtn && !$seekBtn.contains(e.target)) {
-    seekOpen = false;
-    $seekBar.classList.remove('show');
+    closeSeek();
   }
 });
 
