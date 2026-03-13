@@ -249,6 +249,25 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 
 // ── Constants ──
 const MM_TO_PT = 72 / 25.4; // 1mm ≈ 2.8346 PDF points
+const BOOKMARK_KEY = 'bookviewer_pos_' + CONFIG.pdfPath;
+
+// ── Bookmark (reading position persistence) ──
+function saveBookmark() {
+  try {
+    const vIdx = spreads[currentIdx] ? spreads[currentIdx][0] : 0;
+    localStorage.setItem(BOOKMARK_KEY, '' + vIdx);
+  } catch(e) {}
+}
+function restoreBookmark() {
+  try {
+    const saved = localStorage.getItem(BOOKMARK_KEY);
+    if (saved === null) return;
+    const vIdx = parseInt(saved, 10);
+    if (isNaN(vIdx) || vIdx <= 0) return;
+    const idx = spreads.findIndex(s => s.includes(vIdx));
+    if (idx > 0) currentIdx = idx;
+  } catch(e) {}
+}
 
 // ── State ──
 let pdfDoc = null;
@@ -494,6 +513,7 @@ async function display() {
 
   updateIndicator(sp);
   $progress.style.width = ((currentIdx + 1) / spreads.length * 100) + '%';
+  saveBookmark();
   resetHintTimer();
   preload();
 }
@@ -573,12 +593,39 @@ document.addEventListener('touchend', e => {
 
 // ── Resize ──
 let resizeT=null;
+let pendingFullscreen = false;
+
+function requestFs() {
+  const el = document.documentElement;
+  const rq = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  if (rq) rq.call(el).catch(() => {});
+}
+function exitFs() {
+  const ex = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+  if (ex && (document.fullscreenElement || document.webkitFullscreenElement)) {
+    ex.call(document).catch(() => {});
+  }
+}
+function isFullscreen() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
 function onResize() {
   clearTimeout(resizeT);
   resizeT = setTimeout(() => {
     const was = isSpread;
     isSpread = detectSpread();
     pageCache.clear();
+
+    // Request fullscreen when entering landscape (needs user gesture)
+    if (isSpread && !was && !isFullscreen()) {
+      pendingFullscreen = true;
+    }
+    // Exit fullscreen when returning to portrait
+    if (!isSpread && was && isFullscreen()) {
+      exitFs();
+    }
+
     if (was !== isSpread) {
       const fv = spreads[currentIdx] ? spreads[currentIdx][0] : 0;
       buildSpreads();
@@ -588,6 +635,15 @@ function onResize() {
     display();
   }, 180);
 }
+
+// Fulfill pending fullscreen on next user gesture
+document.addEventListener('click', () => {
+  if (pendingFullscreen) { pendingFullscreen = false; requestFs(); }
+}, { capture: true });
+document.addEventListener('touchend', () => {
+  if (pendingFullscreen) { pendingFullscreen = false; requestFs(); }
+}, { capture: true, passive: true });
+
 window.addEventListener('resize', onResize);
 window.addEventListener('orientationchange', () => setTimeout(onResize, 250));
 
@@ -603,11 +659,13 @@ function flashSettings() {
   $setBtn.classList.add('visible');
   clearTimeout(setBtnT);
   setBtnT = setTimeout(() => { if (!settingsOpen) $setBtn.classList.remove('visible'); }, 2500);
-  // Also reset hint on any interaction
-  resetHintTimer();
 }
-document.addEventListener('mousemove', flashSettings);
-document.addEventListener('touchstart', flashSettings, {passive:true});
+// Hide hint on user interaction, but don't reset the timer
+function onUserInteraction() {
+  if (hintVisible) { $hint.classList.remove('show'); hintVisible = false; }
+}
+document.addEventListener('mousemove', () => { flashSettings(); onUserInteraction(); });
+document.addEventListener('touchstart', () => { flashSettings(); onUserInteraction(); }, {passive:true});
 
 document.querySelectorAll('#bg-toggle button').forEach(b => {
   b.addEventListener('click', () => {
@@ -661,6 +719,7 @@ async function init() {
     isSpread = detectSpread();
     buildSpreads();
     currentIdx = 0;
+    restoreBookmark();
 
     $loading.classList.add('hidden');
     $viewer.classList.add('visible');
