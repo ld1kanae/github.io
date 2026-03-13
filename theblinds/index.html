@@ -422,33 +422,47 @@ function renderCover(img,mw,mh) {
 async function renderPdf(num,mw,mh) {
   const pg=await pdfDoc.getPage(num);
   const vp=pg.getViewport({scale:1});
-  const fit=Math.min(mw/vp.width,mh/vp.height);
-  const pr=devicePixelRatio||1, rs=fit*CONFIG.quality*pr;
+  const pr=devicePixelRatio||1;
+
+  // Calculate gutter crop in PDF points BEFORE fitting
+  let cropPt=0, cropSide='left';
+  if (CONFIG.gutterCorrection) {
+    const cm=CONFIG.gutterMargin-CONFIG.foreEdgeMargin;
+    if (cm>0) { cropPt=cm*MM_TO_PT; cropSide=gutterSide(num); }
+  }
+
+  // Fit based on trimmed page dimensions — canvas will fill target exactly
+  const effW=vp.width-cropPt;
+  const fit=Math.min(mw/effW, mh/vp.height);
+  const rs=fit*CONFIG.quality*pr;
+
+  // Render full page first
   const sv=pg.getViewport({scale:rs}), dv=pg.getViewport({scale:fit});
   const c=document.createElement('canvas');
   c.width=sv.width; c.height=sv.height;
-  c.style.width=dv.width+'px'; c.style.height=dv.height+'px';
-  c.className='page-canvas';
   const ctx=c.getContext('2d');
   await pg.render({canvasContext:ctx,viewport:sv}).promise;
+
+  // Black correction
   if (CONFIG.blackCorrection>0) {
     const id=ctx.getImageData(0,0,c.width,c.height), d=id.data, t=CONFIG.blackCorrection;
     for (let i=0,l=d.length;i<l;i+=4) { if(d[i]<=t&&d[i+1]<=t&&d[i+2]<=t) d[i]=d[i+1]=d[i+2]=0; }
     ctx.putImageData(id,0,0);
   }
-  if (CONFIG.gutterCorrection) {
-    const cm=CONFIG.gutterMargin-CONFIG.foreEdgeMargin;
-    if (cm>0) {
-      const cp=Math.round(cm*MM_TO_PT*rs), side=gutterSide(num);
-      const tr=document.createElement('canvas'), nw=c.width-cp;
-      tr.width=nw; tr.height=c.height;
-      tr.getContext('2d').drawImage(c,side==='left'?cp:0,0,nw,c.height,0,0,nw,c.height);
-      // Keep display width at original size — fills viewport with no gap.
-      // The ~3% horizontal stretch from trimming ~4.75mm is imperceptible.
-      tr.style.width=dv.width+'px'; tr.style.height=dv.height+'px';
-      tr.className='page-canvas'; return tr;
-    }
+
+  // Gutter crop
+  if (cropPt>0) {
+    const cp=Math.round(cropPt*rs);
+    const tr=document.createElement('canvas'), nw=c.width-cp;
+    tr.width=nw; tr.height=c.height;
+    tr.getContext('2d').drawImage(c, cropSide==='left'?cp:0, 0, nw, c.height, 0, 0, nw, c.height);
+    // Display size = trimmed dimensions × fit (naturally fills mw)
+    tr.style.width=Math.round(effW*fit)+'px'; tr.style.height=Math.round(vp.height*fit)+'px';
+    tr.className='page-canvas'; return tr;
   }
+
+  c.style.width=dv.width+'px'; c.style.height=dv.height+'px';
+  c.className='page-canvas';
   return c;
 }
 
@@ -545,7 +559,7 @@ async function display() {
   const vw = window.innerWidth, vh = window.innerHeight;
 
   let mw, mh=vh;
-  if (sp.length===2) mw=(vw/2)-1;
+  if (sp.length===2) mw=vw/2;
   else mw = isSpread ? Math.min(vw*0.48,vh*0.75) : vw;
 
   const nodes=[];
@@ -556,8 +570,6 @@ async function display() {
   if (sp.length===2) {
     if (readDir==='rtl') { $spread.appendChild(nodes[1]); $spread.appendChild(nodes[0]); }
     else { $spread.appendChild(nodes[0]); $spread.appendChild(nodes[1]); }
-    const spine=document.createElement('div'); spine.className='spine-shadow';
-    $spread.appendChild(spine);
   } else {
     $spread.appendChild(nodes[0]);
   }
@@ -591,7 +603,7 @@ async function preload() {
     const idx=currentIdx+di;
     if (idx<0||idx>=spreads.length) continue;
     const sp=spreads[idx];
-    const mw = sp.length===2?(vw/2)-1:(isSpread?Math.min(vw*0.48,vh*0.75):vw);
+    const mw = sp.length===2?vw/2:(isSpread?Math.min(vw*0.48,vh*0.75):vw);
     for (const vi of sp) renderVP(vi,mw,vh).catch(()=>{});
   }
 }
