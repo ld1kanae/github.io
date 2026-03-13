@@ -270,7 +270,7 @@ function applyTheme() {
   $setPanel.style.backgroundColor = dk ? 'rgba(20,20,20,0.95)' : 'rgba(255,255,255,0.95)';
   $setPanel.style.color = dk ? '#bbb' : '#444';
   $setPanel.style.border = `1px solid ${dk ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`;
-  $hintArrow.style.stroke = dk ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)';
+  $hintArrow.style.stroke = dk ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)';
 }
 
 // ── Navigation Hint ──
@@ -287,12 +287,14 @@ function updateHintPosition() {
 function resetHintTimer() {
   if (hintVisible) { $hint.classList.remove('show'); hintVisible = false; }
   clearTimeout(hintTimer);
+  // Show quickly on cover, slower on other pages
+  const delay = (currentIdx === 0) ? 1000 : 4000;
   hintTimer = setTimeout(() => {
     if (currentIdx < spreads.length - 1) {
       $hint.classList.add('show'); hintVisible = true;
-      setTimeout(() => { $hint.classList.remove('show'); hintVisible = false; }, 3000);
+      setTimeout(() => { $hint.classList.remove('show'); hintVisible = false; }, 3500);
     }
-  }, 4000);
+  }, delay);
 }
 
 // ── Layout Detection ──
@@ -588,6 +590,8 @@ function flashSettings() {
   $setBtn.classList.add('visible');
   clearTimeout(setBtnT);
   setBtnT = setTimeout(() => { if (!settingsOpen) $setBtn.classList.remove('visible'); }, 2500);
+  // Also reset hint on any interaction
+  resetHintTimer();
 }
 document.addEventListener('mousemove', flashSettings);
 document.addEventListener('touchstart', flashSettings, {passive:true});
