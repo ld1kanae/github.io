@@ -198,6 +198,10 @@ const CONFIG = {
 
   // 描画品質倍率（1.0〜2.0 / 高いほど鮮明だがメモリ消費増）
   quality: 1.5,
+
+  // 黒補正: PDFの暗い色を真っ黒に補正する強度
+  // 0 = 補正なし / 1〜100 = この値以下のRGB値を純黒(0)に置換（推奨: 30〜50）
+  blackCorrection: 40,
 };
 /* ================================================================ */
 
@@ -292,6 +296,21 @@ async function renderPage(num, maxW, maxH) {
   c.className = 'page-canvas';
 
   await page.render({ canvasContext: c.getContext('2d'), viewport: svp }).promise;
+
+  // Black level correction
+  if (CONFIG.blackCorrection > 0) {
+    const ctx = c.getContext('2d');
+    const img = ctx.getImageData(0, 0, c.width, c.height);
+    const d = img.data;
+    const t = CONFIG.blackCorrection;
+    for (let i = 0, len = d.length; i < len; i += 4) {
+      if (d[i] <= t && d[i+1] <= t && d[i+2] <= t) {
+        d[i] = d[i+1] = d[i+2] = 0;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
   pageCache.set(key, c);
   return c;
 }
